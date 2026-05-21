@@ -1,0 +1,280 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  EMPLOYEE
+  CANDIDATE
+  RECRUITER
+  ADMIN
+}
+
+enum SentimentLabel {
+  VERY_NEGATIVE
+  NEGATIVE
+  NEUTRAL
+  POSITIVE
+  VERY_POSITIVE
+}
+
+enum SummaryType {
+  COMPANY_OVERVIEW
+  WORKPLACE_CULTURE
+  HIRING_SENTIMENT
+  INTERVIEW_EXPERIENCE
+  ENGINEERING_CULTURE
+  PROS_CONS
+  TOXICITY
+  REPUTATION
+}
+
+enum ReviewSource {
+  REDDIT
+  GLASSDOOR
+  BLIND
+  INDEED
+  MANUAL
+  OTHER
+}
+
+enum InterviewOutcome {
+  OFFER
+  REJECTED
+  WITHDRAWN
+  PENDING
+  NO_RESPONSE
+}
+
+model User {
+  id            String          @id @default(uuid()) @db.Uuid
+  supabaseId    String          @unique @map("supabase_id")
+  email         String          @unique
+  displayName   String?         @map("display_name")
+  role          UserRole        @default(CANDIDATE)
+  avatarUrl     String?         @map("avatar_url")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  searchHistory SearchHistory[]
+  candidates    Candidate[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Company {
+  id              String            @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String            @unique
+  description     String?           @db.Text
+  industry        String?
+  website         String?
+  logoUrl         String?           @map("logo_url")
+  headquarters    String?
+  country         String?
+  city            String?
+  latitude        Float?
+  longitude       Float?
+  employeeCount   Int?              @map("employee_count")
+  foundedYear     Int?              @map("founded_year")
+  geoapifyId      String?           @map("geoapify_id")
+  metadata        Json?
+  isVerified      Boolean           @default(false) @map("is_verified")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  redditPosts     RedditPost[]
+  aiSummaries     AiSummary[]
+  sentimentScores SentimentScore[]
+  interviewReviews InterviewReview[]
+  companyScores   CompanyScore[]
+  searchHistory   SearchHistory[]
+
+  @@index([name])
+  @@index([slug])
+  @@index([industry])
+  @@index([country, city])
+  @@map("companies")
+}
+
+model RedditPost {
+  id            String       @id @default(uuid()) @db.Uuid
+  companyId     String?      @map("company_id") @db.Uuid
+  redditId      String       @unique @map("reddit_id")
+  title         String
+  content       String?      @db.Text
+  author        String?
+  subreddit     String
+  url           String
+  permalink     String
+  score         Int          @default(0)
+  numComments   Int          @default(0) @map("num_comments")
+  upvoteRatio   Float?       @map("upvote_ratio")
+  isSelf        Boolean      @default(true) @map("is_self")
+  flair         String?
+  sentiment     SentimentLabel?
+  sentimentScore Float?      @map("sentiment_score")
+  postedAt      DateTime     @map("posted_at")
+  fetchedAt     DateTime     @default(now()) @map("fetched_at")
+  rawData       Json?        @map("raw_data")
+  company       Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([subreddit])
+  @@index([postedAt])
+  @@index([sentiment])
+  @@map("reddit_posts")
+}
+
+model AiSummary {
+  id          String      @id @default(uuid()) @db.Uuid
+  companyId   String      @map("company_id") @db.Uuid
+  type        SummaryType
+  title       String?
+  summary     String      @db.Text
+  pros        String[]    @default([])
+  cons        String[]    @default([])
+  highlights  String[]    @default([])
+  metadata    Json?
+  model       String      @default("gemini-2.0-flash")
+  tokensUsed  Int?        @map("tokens_used")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, type])
+  @@index([companyId])
+  @@index([type])
+  @@map("ai_summaries")
+}
+
+model SentimentScore {
+  id              String         @id @default(uuid()) @db.Uuid
+  companyId       String         @map("company_id") @db.Uuid
+  overallScore    Float          @map("overall_score")
+  label           SentimentLabel
+  positiveRatio   Float          @map("positive_ratio")
+  negativeRatio   Float          @map("negative_ratio")
+  neutralRatio    Float          @map("neutral_ratio")
+  sampleSize      Int            @map("sample_size")
+  hiringScore     Float?         @map("hiring_score")
+  cultureScore    Float?         @map("culture_score")
+  managementScore Float?         @map("management_score")
+  compensationScore Float?       @map("compensation_score")
+  breakdown       Json?
+  periodStart     DateTime?      @map("period_start")
+  periodEnd       DateTime?      @map("period_end")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  company         Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([label])
+  @@index([createdAt])
+  @@map("sentiment_scores")
+}
+
+model InterviewReview {
+  id            String           @id @default(uuid()) @db.Uuid
+  companyId     String           @map("company_id") @db.Uuid
+  source        ReviewSource     @default(REDDIT)
+  role          String?
+  level         String?
+  difficulty    Int?
+  experience    String?          @db.Text
+  outcome       InterviewOutcome?
+  rating        Float?
+  pros          String[]         @default([])
+  cons          String[]         @default([])
+  questions     String[]         @default([])
+  processLength String?          @map("process_length")
+  interviewedAt DateTime?        @map("interviewed_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  company       Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([outcome])
+  @@index([createdAt])
+  @@map("interview_reviews")
+}
+
+model CompanyScore {
+  id                String   @id @default(uuid()) @db.Uuid
+  companyId         String   @map("company_id") @db.Uuid
+  reputationScore   Float    @map("reputation_score")
+  cultureScore      Float?   @map("culture_score")
+  hiringScore       Float?   @map("hiring_score")
+  compensationScore Float?   @map("compensation_score")
+  workLifeScore     Float?   @map("work_life_score")
+  leadershipScore   Float?   @map("leadership_score")
+  toxicityScore     Float?   @map("toxicity_score")
+  engineeringScore  Float?   @map("engineering_score")
+  growthScore       Float?   @map("growth_score")
+  confidence        Float    @default(0.5)
+  factors           Json?
+  computedAt        DateTime @default(now()) @map("computed_at")
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([reputationScore])
+  @@index([computedAt])
+  @@map("company_scores")
+}
+
+model Candidate {
+  id          String            @id @default(uuid()) @db.Uuid
+  userId      String?           @map("user_id") @db.Uuid
+  name        String
+  email       String?
+  githubUrl   String?           @map("github_url")
+  linkedinUrl String?           @map("linkedin_url")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  user        User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  profiles    CandidateProfile[]
+
+  @@index([userId])
+  @@index([email])
+  @@map("candidates")
+}
+
+model CandidateProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  candidateId     String   @map("candidate_id") @db.Uuid
+  headline        String?
+  bio             String?  @db.Text
+  skills          String[] @default([])
+  experience      Json?
+  education       Json?
+  reputationScore Float?   @map("reputation_score")
+  githubStats     Json?    @map("github_stats")
+  analysis        Json?
+  analyzedAt      DateTime? @map("analyzed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  candidate       Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("candidate_profiles")
+}
+
+model SearchHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  companyId String?  @map("company_id") @db.Uuid
+  query     String
+  source    String   @default("web")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([query])
+  @@index([createdAt])
+  @@map("search_history")
+}
